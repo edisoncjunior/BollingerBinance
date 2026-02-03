@@ -353,6 +353,25 @@ def pct_to_price_factor(pct, leverage, is_long):
         return 1 - price_move
 
 # =========================
+# BINANCE API
+# =========================
+def get_klines(symbol, interval, limit=200):
+    url = "https://fapi.binance.com/fapi/v1/klines"
+
+    r = requests.get(
+        url,
+        params={
+            "symbol": symbol,
+            "interval": interval,
+            "limit": limit
+        },
+        timeout=10
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+# =========================
 # TESTE DE CONEXÃO BINANCE
 # =========================
 def test_connection():
