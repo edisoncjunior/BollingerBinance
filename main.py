@@ -352,6 +352,18 @@ def pct_to_price_factor(pct, leverage, is_long):
     else:
         return 1 - price_move
 
+# =========================
+# TESTE DE CONEXÃO BINANCE
+# =========================
+def test_connection():
+    try:
+        client = get_binance_client()
+        print("✅ Conexão Binance OK")
+        print("Saldo USDT:", client.futures_account_balance())
+        return True
+    except Exception as e:
+        print("❌ Erro Binance:", e)
+        return False
 
 # =========================
 # LOOP PRINCIPAL
@@ -359,6 +371,13 @@ def pct_to_price_factor(pct, leverage, is_long):
 msg = f"[{SYMBOLS}] 🚀 Bot Bollinger Binance iniciado"
 print(msg)
 send_telegram(msg)
+
+# =========================
+# TESTE ANTES DO LOOP
+# =========================
+if not test_connection():
+    raise RuntimeError("Falha na conexão com Binance. Verifique suas chaves.")
+
 
 while True:
     try:
