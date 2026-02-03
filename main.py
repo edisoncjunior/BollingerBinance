@@ -15,28 +15,10 @@ import requests
 import numpy as np
 from datetime import datetime
 from dotenv import load_dotenv
-
 from decimal import Decimal, ROUND_DOWN
+import math
 
 load_dotenv()
-
-# =========================
-# CLIENT BINANCE FUTURES
-# =========================
-from binance.client import Client
-from binance.enums import *
-import math
-import os
-
-BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
-BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
-
-client = Client(
-    BINANCE_API_KEY,
-    BINANCE_API_SECRET,
-    testnet=False  # USE True para testes
-)
-
 
 # =========================
 # CONFIGURAÇÕES
@@ -59,6 +41,23 @@ TP1_PROFIT_PCT = 50    # lucro em %
 TP2_PROFIT_PCT = 100   # lucro em %
 SL_LOSS_PCT   = 50     # perda em %
 
+last_signal = {s: None for s in SYMBOLS}
+
+# =========================
+# BINANCE CLIENTE (sob demanda - para web)
+# =========================
+from binance.client import Client
+from binance.enums import *
+
+BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
+BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
+
+if not BINANCE_API_KEY or not BINANCE_API_SECRET:
+    raise RuntimeError("BINANCE_API_KEY ou BINANCE_API_SECRET ausentes")
+
+def get_binance_client():
+    return Client(api_key=BINANCE_API_KEY, api_secret=BINANCE_API_SECRET, testnet=False)
+
 # =========================
 # DATA/HORA
 # =========================
@@ -66,25 +65,38 @@ def agora_str():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 # =========================
-# BINANCE API
+# TELEGRAM
 # =========================
-def get_klines(symbol, interval, limit=200):
-    url = "https://fapi.binance.com/fapi/v1/klines"
+def _get_env():
+    return os.getenv("TELEGRAM_TOKEN"), os.getenv("TELEGRAM_CHAT_ID")
 
-    r = requests.get(
-        url,
-        params={
-            "symbol": symbol,
-            "interval": interval,
-            "limit": limit
-        },
-        timeout=10
-    )
-    r.raise_for_status()
-    return r.json()
+def send_telegram(msg: str):
+    token, chat_id = _get_env()
+    if not token or not chat_id:
+        return  # variáveis ausentes, não envia
+
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": msg},
+            timeout=10
+        )
+    except Exception as e:
+        print("[ERRO TELEGRAM]", e)
+
+# =========================
+# BOLLINGER
+# =========================
+def bollinger(closes):
+    arr = np.array(closes)
+    sma = arr[-BOLL_PERIOD:].mean()
+    std = arr[-BOLL_PERIOD:].std()
+    upper = sma + BOLL_STD * std
+    lower = sma - BOLL_STD * std
+    return upper, lower
 
 # ===============================================
-# FUNÇÕES DE NORMALIZAÇÃO (PRICE + QTY)
+# FUNÇÕES DE NORMALIZAÇÃO (PRICE + QTY) + FUNÇÕES AUXILIARES BINANCE
 # ===============================================
 _exchange_info_cache = None
 
@@ -151,13 +163,6 @@ def get_step_size(symbol):
                 if f["filterType"] == "LOT_SIZE":
                     return float(f["stepSize"])
     raise Exception(f"stepSize não encontrado para {symbol}")
-
-def normalize_price(price, tick_size):
-    return math.floor(price / tick_size) * tick_size
-
-def normalize_qty(qty, step_size):
-    return math.floor(qty / step_size) * step_size
-
 
 # =========================
 # VERIFICAR SE JÁ EXISTE POSIÇÃO NO LADO
@@ -332,7 +337,6 @@ def process_signal(symbol, signal):
     last_signal[symbol] = signal
     return True
 
-
 # =========================
 # FUNÇÃO AUXILIAR (CONVERSÃO CORRETA)
 # =========================
@@ -348,54 +352,13 @@ def pct_to_price_factor(pct, leverage, is_long):
     else:
         return 1 - price_move
 
-# =========================
-# ENV
-# =========================
-def _get_env():
-    return os.getenv("TELEGRAM_TOKEN"), os.getenv("TELEGRAM_CHAT_ID")
-
-# =========================
-# TELEGRAM
-# =========================
-def send_telegram(msg: str):
-    token, chat_id = _get_env()
-    if not token or not chat_id:
-        return  # variáveis ausentes, não envia
-
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": msg},
-            timeout=10
-        )
-    except Exception as e:
-        print("[ERRO TELEGRAM]", e)
-
-
-# =========================
-# BOLLINGER
-# =========================
-def bollinger(closes):
-    arr = np.array(closes)
-    sma = arr[-BOLL_PERIOD:].mean()
-    std = arr[-BOLL_PERIOD:].std()
-    upper = sma + BOLL_STD * std
-    lower = sma - BOLL_STD * std
-    return upper, lower
-
-
-# =========================
-# INIT
-# =========================
-msg = f"[{SYMBOLS}] 🚀 Bot Bollinger Binance iniciado"
-print(msg)
-send_telegram(msg)
-
 
 # =========================
 # LOOP PRINCIPAL
 # =========================
-last_signal = {s: None for s in SYMBOLS}
+msg = f"[{SYMBOLS}] 🚀 Bot Bollinger Binance iniciado"
+print(msg)
+send_telegram(msg)
 
 while True:
     try:
@@ -435,4 +398,15 @@ while True:
         print("[ERRO LOOP]", e)
 
     time.sleep(LOOP_SLEEP)
+
+
+
+
+
+
+
+
+
+
+
 
